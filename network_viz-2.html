@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Vocabulary Network — Range × Degree</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+        background: #f5f2f0;
+        color: #42423f;
+        font-family: 'DM Mono', 'Courier New', monospace;
+        height: 100vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+  header {
+    padding: 14px 20px 10px;
+    border-bottom: 1px solid #2c2c2a;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+
+  h1 {
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #f1efe8;
+  }
+
+  .legend {
+    display: flex;
+    gap: 16px;
+    font-size: 13px;
+    color: #888780;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .controls {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 11px;
+    color: #5f5e5a;
+  }
+
+  .btn {
+    background: none;
+    border: 1px solid #2c2c2a;
+    color: #888780;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    transition: border-color .15s, color .15s;
+  }
+  .btn:hover { border-color: #5f5e5a; color: #c2c0b6; }
+  .btn.active { border-color: #7f77dd; color: #afa9ec; }
+
+  #canvas-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+
+  svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .link {
+    stroke: #e3e36d;
+    stroke-width: 0.8;
+    opacity: 0.6;
+  }
+
+  .link.highlighted { stroke: #5f5e5a; opacity: 1; stroke-width: 1.2; }
+  .link.dimmed { opacity: 0.08; }
+
+  .node circle {
+    stroke-width: 1;
+    cursor: grab;
+    transition: r .2s;
+  }
+  .node circle:active { cursor: grabbing; }
+  .node.dimmed circle { opacity: 0.12; }
+  .node.dimmed text { opacity: 0.06; }
+
+  .node text {
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+    fill: #d4d2c8;
+    font-weight: 500;
+    pointer-events: none;
+    dominant-baseline: middle;
+    paint-order: stroke fill;
+    stroke: #1a1917;
+    stroke-width: 3px;
+    stroke-linejoin: round;
+  }
+
+  .node.highlighted text { fill: #f1efe8; font-weight: 700; stroke-width: 4px; }
+
+  #tooltip {
+    position: absolute;
+    background: #1a1917;
+    border: 1px solid #3c3489;
+    border-radius: 6px;
+    padding: 10px 13px;
+    font-size: 11px;
+    line-height: 1.7;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .15s;
+    min-width: 160px;
+    z-index: 10;
+  }
+
+  #tooltip .word {
+    font-size: 13px;
+    font-weight: 700;
+    color: #f1efe8;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+  }
+
+  #tooltip .stat { color: #888780; }
+  #tooltip .stat span { color: #c2c0b6; }
+
+  #info {
+    position: absolute;
+    bottom: 16px;
+    left: 20px;
+    font-size: 10px;
+    color: #444441;
+    letter-spacing: 0.05em;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Vocabulary Network</h1>
+  <div class="legend">
+    <div class="legend-item"><div class="dot" style="background:#378add"></div>List 1 hub</div>
+    <div class="legend-item"><div class="dot" style="background:#7f77dd"></div>List 2</div>
+    <div class="legend-item"><div class="dot" style="background:#1d9e75"></div>List 3</div>
+  </div>
+  <div class="controls">
+    <span>filter:</span>
+    <button class="btn active" id="btn-all"  onclick="filterList('all')">all</button>
+    <button class="btn"        id="btn-l2"   onclick="filterList('2')">list 2</button>
+    <button class="btn"        id="btn-l3"   onclick="filterList('3')">list 3</button>
+    <button class="btn"        id="btn-reset" onclick="resetZoom()">reset</button>
+  </div>
+</header>
+
+<div id="canvas-wrap">
+  <svg id="svg"></svg>
+  <div id="tooltip"></div>
+  <div id="info">top 100 nodes by betweenness · node size = betweenness · drag · scroll to zoom · hover for details</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script>
+
+const NODES = [{"id":"beach","list":"1","degree":98,"betweenness":0.00963,"range":19},{"id":"animal","list":"1","degree":84,"betweenness":0.012248,"range":16},{"id":"island","list":"1","degree":91,"betweenness":0.010906,"range":8},{"id":"seem","list":"3","degree":54,"betweenness":0.00349,"range":12},{"id":"drive","list":"2","degree":80,"betweenness":0.008229,"range":10},{"id":"pocket","list":"2","degree":52,"betweenness":0.004877,"range":11},{"id":"street","list":"1","degree":94,"betweenness":0.01005,"range":15},{"id":"sign","list":"2","degree":51,"betweenness":0.00344,"range":11},{"id":"team","list":"2","degree":56,"betweenness":0.005578,"range":10},{"id":"climb","list":"1","degree":101,"betweenness":0.012063,"range":16},{"id":"station","list":"2","degree":52,"betweenness":0.004662,"range":8},{"id":"end","list":"1","degree":107,"betweenness":0.009424,"range":32},{"id":"camp","list":"2","degree":56,"betweenness":0.004622,"range":6},{"id":"speak","list":"1","degree":83,"betweenness":0.010725,"range":18},{"id":"much","list":"1","degree":115,"betweenness":0.012184,"range":25},{"id":"life","list":"1","degree":141,"betweenness":0.020882,"range":31},{"id":"earth","list":"2","degree":57,"betweenness":0.006476,"range":8},{"id":"holiday","list":"2","degree":117,"betweenness":0.017782,"range":16},{"id":"stay","list":"1","degree":150,"betweenness":0.023796,"range":23},{"id":"building","list":"2","degree":70,"betweenness":0.006836,"range":9},{"id":"group","list":"2","degree":56,"betweenness":0.004586,"range":11},{"id":"able","list":"3","degree":58,"betweenness":0.004868,"range":10},{"id":"different","list":"1","degree":132,"betweenness":0.02326,"range":23},{"id":"tent","list":"3","degree":53,"betweenness":0.004183,"range":6},{"id":"keep","list":"1","degree":99,"betweenness":0.012841,"range":25},{"id":"hurt","list":"2","degree":70,"betweenness":0.007198,"range":14},{"id":"fact","list":"2","degree":73,"betweenness":0.009235,"range":16},{"id":"worried","list":"2","degree":67,"betweenness":0.005545,"range":11},{"id":"move","list":"1","degree":114,"betweenness":0.014597,"range":21},{"id":"turn","list":"1","degree":100,"betweenness":0.01166,"range":23},{"id":"meet","list":"1","degree":133,"betweenness":0.018495,"range":28},{"id":"difficult","list":"2","degree":74,"betweenness":0.010393,"range":20},{"id":"summer","list":"2","degree":51,"betweenness":0.004606,"range":11},{"id":"ghost","list":"2","degree":56,"betweenness":0.004006,"range":5},{"id":"popular","list":"2","degree":55,"betweenness":0.004507,"range":13},{"id":"huge","list":"1","degree":93,"betweenness":0.0094,"range":18},{"id":"steal","list":"2","degree":49,"betweenness":0.002737,"range":8},{"id":"easy","list":"2","degree":90,"betweenness":0.011716,"range":22},{"id":"company","list":"2","degree":60,"betweenness":0.004475,"range":11},{"id":"open","list":"1","degree":136,"betweenness":0.019167,"range":23},{"id":"top","list":"2","degree":80,"betweenness":0.009737,"range":15},{"id":"bit","list":"1","degree":111,"betweenness":0.01027,"range":27},{"id":"run","list":"1","degree":106,"betweenness":0.011908,"range":26},{"id":"lock","list":"2","degree":49,"betweenness":0.003288,"range":5},{"id":"history","list":"2","degree":57,"betweenness":0.005763,"range":16},{"id":"decide","list":"2","degree":94,"betweenness":0.012238,"range":20},{"id":"save","list":"2","degree":58,"betweenness":0.004686,"range":10},{"id":"well","list":"1","degree":97,"betweenness":0.010735,"range":22},{"id":"kill","list":"1","degree":104,"betweenness":0.011737,"range":14},{"id":"part","list":"1","degree":92,"betweenness":0.009309,"range":21},{"id":"today","list":"1","degree":118,"betweenness":0.011476,"range":29},{"id":"explain","list":"2","degree":51,"betweenness":0.003666,"range":10},{"id":"build","list":"2","degree":100,"betweenness":0.01703,"range":15},{"id":"chuck","list":"3","degree":50,"betweenness":0.004599,"range":1},{"id":"light","list":"2","degree":57,"betweenness":0.005491,"range":9},{"id":"plane","list":"2","degree":75,"betweenness":0.008855,"range":6},{"id":"attack","list":"2","degree":56,"betweenness":0.004258,"range":7},{"id":"waiter","list":"2","degree":53,"betweenness":0.006172,"range":3},{"id":"wall","list":"2","degree":51,"betweenness":0.004473,"range":9},{"id":"age","list":"2","degree":53,"betweenness":0.006148,"range":10},{"id":"sit","list":"1","degree":89,"betweenness":0.01187,"range":23},{"id":"guide","list":"2","degree":50,"betweenness":0.004765,"range":7},{"id":"mountain","list":"1","degree":90,"betweenness":0.017313,"range":12},{"id":"become","list":"1","degree":110,"betweenness":0.01317,"range":18},{"id":"break","list":"1","degree":109,"betweenness":0.014892,"range":22},{"id":"teacher","list":"2","degree":106,"betweenness":0.015005,"range":18},{"id":"imagine","list":"3","degree":58,"betweenness":0.005101,"range":8},{"id":"space","list":"2","degree":63,"betweenness":0.005496,"range":7},{"id":"finish","list":"2","degree":58,"betweenness":0.005683,"range":14},{"id":"dog","list":"1","degree":90,"betweenness":0.01185,"range":22},{"id":"travel","list":"2","degree":85,"betweenness":0.011622,"range":14},{"id":"student","list":"2","degree":58,"betweenness":0.00614,"range":11},{"id":"learn","list":"2","degree":107,"betweenness":0.017011,"range":23},{"id":"fire","list":"1","degree":77,"betweenness":0.010537,"range":8},{"id":"high","list":"2","degree":61,"betweenness":0.00641,"range":15},{"id":"sea","list":"1","degree":107,"betweenness":0.010724,"range":17},{"id":"write","list":"1","degree":130,"betweenness":0.015036,"range":26},{"id":"question","list":"1","degree":104,"betweenness":0.011755,"range":21},{"id":"sand","list":"2","degree":48,"betweenness":0.002569,"range":5},{"id":"kind","list":"2","degree":78,"betweenness":0.009859,"range":15},{"id":"side","list":"2","degree":54,"betweenness":0.004522,"range":10},{"id":"young","list":"1","degree":116,"betweenness":0.013917,"range":21},{"id":"safe","list":"2","degree":49,"betweenness":0.003892,"range":12},{"id":"scene","list":"1","degree":84,"betweenness":0.011926,"range":12},{"id":"long","list":"1","degree":114,"betweenness":0.016373,"range":23},{"id":"important","list":"2","degree":110,"betweenness":0.020082,"range":22},{"id":"person","list":"2","degree":71,"betweenness":0.007628,"range":16},{"id":"eye","list":"1","degree":88,"betweenness":0.011854,"range":17},{"id":"city","list":"1","degree":105,"betweenness":0.011246,"range":15},{"id":"mother","list":"1","degree":89,"betweenness":0.010107,"range":17},{"id":"join","list":"2","degree":70,"betweenness":0.010751,"range":15},{"id":"yesterday","list":"2","degree":52,"betweenness":0.003345,"range":10},{"id":"month","list":"2","degree":90,"betweenness":0.011507,"range":18},{"id":"interview","list":"2","degree":58,"betweenness":0.008483,"range":11},{"id":"example","list":"2","degree":62,"betweenness":0.006641,"range":18},{"id":"cross","list":"2","degree":53,"betweenness":0.004339,"range":9},{"id":"bring","list":"1","degree":90,"betweenness":0.011209,"range":17},{"id":"doctor","list":"2","degree":53,"betweenness":0.004241,"range":8},{"id":"spend","list":"1","degree":113,"betweenness":0.01548,"range":22},{"id":"visit","list":"2","degree":62,"betweenness":0.007279,"range":13}];
+
+const EDGES = [{"source":"able","target":"sit"},{"source":"able","target":"dog"},{"source":"able","target":"scene"},{"source":"able","target":"part"},{"source":"able","target":"different"},{"source":"able","target":"life"},{"source":"able","target":"write"},{"source":"able","target":"question"},{"source":"able","target":"well"},{"source":"able","target":"young"},{"source":"able","target":"street"},{"source":"age","target":"meet"},{"source":"age","target":"today"},{"source":"age","target":"speak"},{"source":"age","target":"eye"},{"source":"age","target":"end"},{"source":"age","target":"part"},{"source":"age","target":"life"},{"source":"age","target":"write"},{"source":"age","target":"question"},{"source":"age","target":"keep"},{"source":"age","target":"well"},{"source":"age","target":"young"},{"source":"age","target":"street"},{"source":"animal","target":"high"},{"source":"animal","target":"kind"},{"source":"animal","target":"popular"},{"source":"animal","target":"important"},{"source":"animal","target":"build"},{"source":"animal","target":"example"},{"source":"animal","target":"space"},{"source":"animal","target":"company"},{"source":"animal","target":"difficult"},{"source":"animal","target":"easy"},{"source":"animal","target":"travel"},{"source":"animal","target":"pocket"},{"source":"attack","target":"today"},{"source":"attack","target":"long"},{"source":"attack","target":"sea"},{"source":"attack","target":"end"},{"source":"attack","target":"turn"},{"source":"attack","target":"much"},{"source":"attack","target":"beach"},{"source":"attack","target":"bit"},{"source":"attack","target":"stay"},{"source":"attack","target":"young"},{"source":"attack","target":"kill"},{"source":"beach","target":"holiday"},{"source":"beach","target":"difficult"},{"source":"beach","target":"yesterday"},{"source":"beach","target":"join"},{"source":"beach","target":"team"},{"source":"beach","target":"waiter"},{"source":"beach","target":"save"},{"source":"beach","target":"group"},{"source":"beach","target":"sand"},{"source":"beach","target":"chuck"},{"source":"beach","target":"plane"},{"source":"beach","target":"visit"},{"source":"beach","target":"camp"},{"source":"beach","target":"drive"},{"source":"beach","target":"interview"},{"source":"beach","target":"decide"},{"source":"become","target":"steal"},{"source":"become","target":"visit"},{"source":"become","target":"learn"},{"source":"become","target":"person"},{"source":"become","target":"difficult"},{"source":"become","target":"top"},{"source":"become","target":"hurt"},{"source":"become","target":"high"},{"source":"become","target":"company"},{"source":"become","target":"seem"},{"source":"become","target":"popular"},{"source":"become","target":"kind"},{"source":"become","target":"sand"},{"source":"become","target":"travel"},{"source":"become","target":"join"},{"source":"become","target":"build"},{"source":"become","target":"history"},{"source":"become","target":"space"},{"source":"become","target":"easy"},{"source":"bit","target":"summer"},{"source":"bit","target":"holiday"},{"source":"bit","target":"sand"},{"source":"bit","target":"difficult"},{"source":"bit","target":"top"},{"source":"bit","target":"pocket"},{"source":"bit","target":"example"},{"source":"bit","target":"yesterday"},{"source":"bit","target":"interview"},{"source":"bit","target":"popular"},{"source":"bit","target":"kind"},{"source":"bit","target":"student"},{"source":"bit","target":"teacher"},{"source":"bit","target":"side"},{"source":"bit","target":"worried"},{"source":"bit","target":"lock"},{"source":"bit","target":"seem"},{"source":"bit","target":"explain"},{"source":"bit","target":"company"},{"source":"bit","target":"history"},{"source":"bit","target":"earth"},{"source":"break","target":"important"},{"source":"break","target":"finish"},{"source":"break","target":"history"},{"source":"break","target":"fact"},{"source":"break","target":"person"},{"source":"break","target":"doctor"},{"source":"break","target":"hurt"},{"source":"break","target":"easy"},{"source":"break","target":"safe"},{"source":"break","target":"space"},{"source":"break","target":"building"},{"source":"break","target":"station"},{"source":"break","target":"chuck"},{"source":"break","target":"plane"},{"source":"break","target":"light"},{"source":"break","target":"imagine"},{"source":"break","target":"wall"},{"source":"break","target":"teacher"},{"source":"break","target":"worried"},{"source":"break","target":"explain"},{"source":"break","target":"lock"},{"source":"break","target":"decide"},{"source":"break","target":"kind"},{"source":"break","target":"yesterday"},{"source":"break","target":"earth"},{"source":"bring","target":"join"},{"source":"bring","target":"build"},{"source":"bring","target":"camp"},{"source":"bring","target":"earth"},{"source":"bring","target":"finish"},{"source":"bring","target":"waiter"},{"source":"bring","target":"side"},{"source":"bring","target":"building"},{"source":"bring","target":"student"},{"source":"bring","target":"month"},{"source":"bring","target":"interview"},{"source":"bring","target":"save"},{"source":"bring","target":"team"},{"source":"bring","target":"safe"},{"source":"bring","target":"travel"},{"source":"bring","target":"sand"},{"source":"build","target":"today"},{"source":"build","target":"city"},{"source":"build","target":"speak"},{"source":"build","target":"long"},{"source":"build","target":"end"},{"source":"build","target":"scene"},{"source":"build","target":"part"},{"source":"build","target":"different"},{"source":"build","target":"life"},{"source":"build","target":"move"},{"source":"build","target":"climb"},{"source":"build","target":"run"},{"source":"build","target":"question"},{"source":"build","target":"keep"},{"source":"build","target":"island"},{"source":"build","target":"stay"},{"source":"build","target":"fire"},{"source":"build","target":"young"},{"source":"build","target":"street"},{"source":"build","target":"huge"},{"source":"build","target":"spend"},{"source":"build","target":"kill"},{"source":"building","target":"today"},{"source":"building","target":"city"},{"source":"building","target":"open"},{"source":"building","target":"sea"},{"source":"building","target":"end"},{"source":"building","target":"part"},{"source":"building","target":"move"},{"source":"building","target":"climb"},{"source":"building","target":"run"},{"source":"building","target":"keep"},{"source":"building","target":"stay"},{"source":"building","target":"mountain"},{"source":"building","target":"street"},{"source":"building","target":"huge"},{"source":"building","target":"spend"},{"source":"building","target":"kill"},{"source":"camp","target":"meet"},{"source":"camp","target":"speak"},{"source":"camp","target":"eye"},{"source":"camp","target":"keep"},{"source":"camp","target":"much"},{"source":"camp","target":"stay"},{"source":"camp","target":"kill"},{"source":"chuck","target":"open"},{"source":"chuck","target":"eye"},{"source":"chuck","target":"long"},{"source":"chuck","target":"sea"},{"source":"chuck","target":"end"},{"source":"chuck","target":"life"},{"source":"chuck","target":"move"},{"source":"chuck","target":"write"},{"source":"chuck","target":"run"},{"source":"chuck","target":"keep"},{"source":"chuck","target":"much"},{"source":"chuck","target":"island"},{"source":"chuck","target":"stay"},{"source":"chuck","target":"fire"},{"source":"chuck","target":"spend"},{"source":"chuck","target":"kill"},{"source":"city","target":"holiday"},{"source":"city","target":"learn"},{"source":"city","target":"visit"},{"source":"city","target":"history"},{"source":"city","target":"decide"},{"source":"city","target":"station"},{"source":"city","target":"waiter"},{"source":"city","target":"sign"},{"source":"city","target":"yesterday"},{"source":"city","target":"drive"},{"source":"city","target":"group"},{"source":"city","target":"hurt"},{"source":"city","target":"guide"},{"source":"city","target":"popular"},{"source":"city","target":"important"},{"source":"city","target":"example"},{"source":"city","target":"finish"},{"source":"city","target":"plane"},{"source":"climb","target":"visit"},{"source":"climb","target":"join"},{"source":"climb","target":"guide"},{"source":"climb","target":"wall"},{"source":"climb","target":"decide"},{"source":"climb","target":"holiday"},{"source":"climb","target":"person"},{"source":"climb","target":"important"},{"source":"climb","target":"team"},{"source":"climb","target":"month"},{"source":"climb","target":"learn"},{"source":"climb","target":"travel"},{"source":"climb","target":"difficult"},{"source":"climb","target":"top"},{"source":"climb","target":"fact"},{"source":"climb","target":"easy"},{"source":"climb","target":"high"},{"source":"climb","target":"tent"},{"source":"climb","target":"finish"},{"source":"climb","target":"safe"},{"source":"climb","target":"popular"},{"source":"climb","target":"ghost"},{"source":"company","target":"meet"},{"source":"company","target":"dog"},{"source":"company","target":"eye"},{"source":"company","target":"end"},{"source":"company","target":"scene"},{"source":"company","target":"question"},{"source":"company","target":"keep"},{"source":"company","target":"stay"},{"source":"company","target":"young"},{"source":"company","target":"huge"},{"source":"company","target":"kill"},{"source":"cross","target":"eye"},{"source":"cross","target":"sea"},{"source":"cross","target":"scene"},{"source":"cross","target":"part"},{"source":"cross","target":"life"},{"source":"cross","target":"question"},{"source":"cross","target":"turn"},{"source":"cross","target":"mother"},{"source":"cross","target":"street"},{"source":"cross","target":"spend"},{"source":"decide","target":"today"},{"source":"decide","target":"open"},{"source":"decide","target":"end"},{"source":"decide","target":"scene"},{"source":"decide","target":"part"},{"source":"decide","target":"life"},{"source":"decide","target":"move"},{"source":"decide","target":"write"},{"source":"decide","target":"keep"},{"source":"decide","target":"island"},{"source":"decide","target":"stay"},{"source":"decide","target":"young"},{"source":"decide","target":"street"},{"source":"different","target":"holiday"},{"source":"different","target":"kind"},{"source":"different","target":"station"},{"source":"different","target":"group"},{"source":"different","target":"example"},{"source":"different","target":"learn"},{"source":"different","target":"drive"},{"source":"different","target":"imagine"},{"source":"different","target":"month"},{"source":"different","target":"summer"},{"source":"different","target":"travel"},{"source":"different","target":"easy"},{"source":"different","target":"explain"},{"source":"different","target":"important"},{"source":"different","target":"student"},{"source":"different","target":"sand"},{"source":"different","target":"space"},{"source":"different","target":"earth"},{"source":"difficult","target":"meet"},{"source":"difficult","target":"speak"},{"source":"difficult","target":"sit"},{"source":"difficult","target":"dog"},{"source":"difficult","target":"eye"},{"source":"difficult","target":"long"},{"source":"difficult","target":"end"},{"source":"difficult","target":"part"},{"source":"difficult","target":"life"},{"source":"difficult","target":"move"},{"source":"difficult","target":"question"},{"source":"difficult","target":"keep"},{"source":"difficult","target":"much"},{"source":"difficult","target":"stay"},{"source":"difficult","target":"mountain"},{"source":"difficult","target":"spend"},{"source":"doctor","target":"open"},{"source":"doctor","target":"sit"},{"source":"doctor","target":"scene"},{"source":"doctor","target":"life"},{"source":"doctor","target":"write"},{"source":"doctor","target":"question"},{"source":"doctor","target":"stay"},{"source":"doctor","target":"young"},{"source":"doctor","target":"spend"},{"source":"dog","target":"earth"},{"source":"dog","target":"wall"},{"source":"dog","target":"interview"},{"source":"dog","target":"fact"},{"source":"dog","target":"yesterday"},{"source":"dog","target":"month"},{"source":"dog","target":"visit"},{"source":"dog","target":"explain"},{"source":"dog","target":"teacher"},{"source":"dog","target":"person"},{"source":"drive","target":"today"},{"source":"drive","target":"open"},{"source":"drive","target":"sit"},{"source":"drive","target":"long"},{"source":"drive","target":"end"},{"source":"drive","target":"part"},{"source":"drive","target":"move"},{"source":"drive","target":"keep"},{"source":"drive","target":"stay"},{"source":"drive","target":"fire"},{"source":"drive","target":"mountain"},{"source":"drive","target":"street"},{"source":"drive","target":"huge"},{"source":"drive","target":"spend"},{"source":"earth","target":"meet"},{"source":"earth","target":"today"},{"source":"earth","target":"long"},{"source":"earth","target":"sea"},{"source":"earth","target":"end"},{"source":"earth","target":"life"},{"source":"earth","target":"run"},{"source":"earth","target":"mother"},{"source":"earth","target":"mountain"},{"source":"earth","target":"huge"},{"source":"easy","target":"scene"},{"source":"easy","target":"life"},{"source":"easy","target":"write"},{"source":"easy","target":"question"},{"source":"easy","target":"keep"},{"source":"easy","target":"much"},{"source":"easy","target":"island"},{"source":"easy","target":"young"},{"source":"easy","target":"street"},{"source":"easy","target":"huge"},{"source":"easy","target":"spend"},{"source":"end","target":"teacher"},{"source":"end","target":"steal"},{"source":"end","target":"kind"},{"source":"end","target":"light"},{"source":"end","target":"station"},{"source":"end","target":"finish"},{"source":"end","target":"ghost"},{"source":"end","target":"high"},{"source":"end","target":"side"},{"source":"end","target":"fact"},{"source":"end","target":"interview"},{"source":"end","target":"worried"},{"source":"end","target":"important"},{"source":"end","target":"student"},{"source":"end","target":"imagine"},{"source":"end","target":"holiday"},{"source":"example","target":"meet"},{"source":"example","target":"open"},{"source":"example","target":"speak"},{"source":"example","target":"eye"},{"source":"example","target":"sea"},{"source":"example","target":"part"},{"source":"example","target":"run"},{"source":"example","target":"keep"},{"source":"example","target":"well"},{"source":"example","target":"young"},{"source":"explain","target":"sea"},{"source":"explain","target":"scene"},{"source":"explain","target":"write"},{"source":"explain","target":"question"},{"source":"explain","target":"well"},{"source":"explain","target":"mother"},{"source":"explain","target":"stay"},{"source":"explain","target":"spend"},{"source":"explain","target":"kill"},{"source":"eye","target":"tent"},{"source":"eye","target":"travel"},{"source":"eye","target":"finish"},{"source":"eye","target":"fact"},{"source":"eye","target":"interview"},{"source":"eye","target":"seem"},{"source":"eye","target":"month"},{"source":"fact","target":"open"},{"source":"fact","target":"long"},{"source":"fact","target":"sea"},{"source":"fact","target":"part"},{"source":"fact","target":"write"},{"source":"fact","target":"keep"},{"source":"fact","target":"much"},{"source":"fact","target":"well"},{"source":"fact","target":"mountain"},{"source":"fact","target":"street"},{"source":"fact","target":"spend"},{"source":"fact","target":"kill"},{"source":"finish","target":"today"},{"source":"finish","target":"open"},{"source":"finish","target":"sea"},{"source":"finish","target":"part"},{"source":"finish","target":"move"},{"source":"finish","target":"run"},{"source":"finish","target":"well"},{"source":"finish","target":"stay"},{"source":"fire","target":"guide"},{"source":"fire","target":"important"},{"source":"fire","target":"learn"},{"source":"fire","target":"interview"},{"source":"fire","target":"summer"},{"source":"fire","target":"holiday"},{"source":"fire","target":"side"},{"source":"fire","target":"top"},{"source":"ghost","target":"meet"},{"source":"ghost","target":"open"},{"source":"ghost","target":"run"},{"source":"ghost","target":"young"},{"source":"ghost","target":"mountain"},{"source":"group","target":"meet"},{"source":"group","target":"today"},{"source":"group","target":"open"},{"source":"group","target":"scene"},{"source":"group","target":"run"},{"source":"group","target":"question"},{"source":"group","target":"well"},{"source":"group","target":"mother"},{"source":"group","target":"stay"},{"source":"group","target":"young"},{"source":"guide","target":"speak"},{"source":"guide","target":"life"},{"source":"guide","target":"well"},{"source":"guide","target":"stay"},{"source":"guide","target":"kill"},{"source":"high","target":"meet"},{"source":"high","target":"sea"},{"source":"high","target":"part"},{"source":"high","target":"life"},{"source":"high","target":"move"},{"source":"high","target":"keep"},{"source":"high","target":"island"},{"source":"high","target":"mountain"},{"source":"high","target":"huge"},{"source":"history","target":"today"},{"source":"history","target":"open"},{"source":"history","target":"long"},{"source":"history","target":"life"},{"source":"history","target":"move"},{"source":"history","target":"run"},{"source":"history","target":"well"},{"source":"history","target":"huge"},{"source":"holiday","target":"meet"},{"source":"holiday","target":"sit"},{"source":"holiday","target":"long"},{"source":"holiday","target":"sea"},{"source":"holiday","target":"life"},{"source":"holiday","target":"write"},{"source":"holiday","target":"turn"},{"source":"holiday","target":"keep"},{"source":"holiday","target":"well"},{"source":"holiday","target":"island"},{"source":"holiday","target":"stay"},{"source":"holiday","target":"mountain"},{"source":"holiday","target":"spend"},{"source":"huge","target":"wall"},{"source":"huge","target":"kind"},{"source":"huge","target":"light"},{"source":"huge","target":"safe"},{"source":"huge","target":"seem"},{"source":"huge","target":"top"},{"source":"huge","target":"steal"},{"source":"huge","target":"plane"},{"source":"huge","target":"learn"},{"source":"huge","target":"important"},{"source":"huge","target":"imagine"},{"source":"hurt","target":"today"},{"source":"hurt","target":"scene"},{"source":"hurt","target":"life"},{"source":"hurt","target":"run"},{"source":"hurt","target":"keep"},{"source":"hurt","target":"well"},{"source":"hurt","target":"stay"},{"source":"hurt","target":"young"},{"source":"imagine","target":"sit"},{"source":"imagine","target":"life"},{"source":"imagine","target":"mother"},{"source":"imagine","target":"island"},{"source":"imagine","target":"street"},{"source":"imagine","target":"spend"},{"source":"important","target":"meet"},{"source":"important","target":"today"},{"source":"important","target":"open"},{"source":"important","target":"sit"},{"source":"important","target":"scene"},{"source":"important","target":"part"},{"source":"important","target":"life"},{"source":"important","target":"move"},{"source":"important","target":"write"},{"source":"important","target":"question"},{"source":"important","target":"keep"},{"source":"important","target":"well"},{"source":"important","target":"mother"},{"source":"important","target":"stay"},{"source":"important","target":"young"},{"source":"important","target":"street"},{"source":"important","target":"spend"},{"source":"interview","target":"speak"},{"source":"interview","target":"sit"},{"source":"interview","target":"long"},{"source":"interview","target":"run"},{"source":"interview","target":"question"},{"source":"interview","target":"much"},{"source":"interview","target":"well"},{"source":"interview","target":"stay"},{"source":"interview","target":"spend"},{"source":"island","target":"visit"},{"source":"island","target":"month"},{"source":"island","target":"save"},{"source":"island","target":"travel"},{"source":"island","target":"plane"},{"source":"island","target":"side"},{"source":"island","target":"light"},{"source":"join","target":"meet"},{"source":"join","target":"today"},{"source":"join","target":"sit"},{"source":"join","target":"sea"},{"source":"join","target":"scene"},{"source":"join","target":"life"},{"source":"join","target":"stay"},{"source":"join","target":"young"},{"source":"join","target":"mountain"},{"source":"keep","target":"teacher"},{"source":"keep","target":"visit"},{"source":"keep","target":"learn"},{"source":"keep","target":"safe"},{"source":"keep","target":"seem"},{"source":"keep","target":"space"},{"source":"keep","target":"person"},{"source":"keep","target":"station"},{"source":"keep","target":"kind"},{"source":"keep","target":"sand"},{"source":"kill","target":"person"},{"source":"kill","target":"save"},{"source":"kill","target":"plane"},{"source":"kill","target":"side"},{"source":"kill","target":"top"},{"source":"kill","target":"lock"},{"source":"kill","target":"steal"},{"source":"kind","target":"long"},{"source":"kind","target":"sea"},{"source":"kind","target":"part"},{"source":"kind","target":"write"},{"source":"kind","target":"question"},{"source":"kind","target":"much"},{"source":"kind","target":"stay"},{"source":"kind","target":"mountain"},{"source":"kind","target":"street"},{"source":"learn","target":"meet"},{"source":"learn","target":"open"},{"source":"learn","target":"speak"},{"source":"learn","target":"scene"},{"source":"learn","target":"part"},{"source":"learn","target":"life"},{"source":"learn","target":"move"},{"source":"learn","target":"write"},{"source":"learn","target":"well"},{"source":"learn","target":"mother"},{"source":"learn","target":"stay"},{"source":"learn","target":"young"},{"source":"learn","target":"mountain"},{"source":"learn","target":"street"},{"source":"learn","target":"spend"},{"source":"life","target":"person"},{"source":"life","target":"save"},{"source":"life","target":"travel"},{"source":"life","target":"side"},{"source":"life","target":"student"},{"source":"life","target":"summer"},{"source":"life","target":"top"},{"source":"life","target":"space"},{"source":"light","target":"today"},{"source":"light","target":"write"},{"source":"light","target":"turn"},{"source":"light","target":"much"},{"source":"light","target":"street"},{"source":"light","target":"spend"},{"source":"lock","target":"open"},{"source":"lock","target":"speak"},{"source":"lock","target":"write"},{"source":"lock","target":"run"},{"source":"lock","target":"question"},{"source":"lock","target":"turn"},{"source":"lock","target":"mother"},{"source":"long","target":"side"},{"source":"long","target":"person"},{"source":"long","target":"month"},{"source":"long","target":"sand"},{"source":"long","target":"top"},{"source":"long","target":"travel"},{"source":"long","target":"summer"},{"source":"long","target":"sign"},{"source":"long","target":"yesterday"},{"source":"long","target":"plane"},{"source":"long","target":"popular"},{"source":"long","target":"pocket"},{"source":"meet","target":"side"},{"source":"meet","target":"team"},{"source":"meet","target":"top"},{"source":"meet","target":"person"},{"source":"meet","target":"tent"},{"source":"meet","target":"travel"},{"source":"meet","target":"plane"},{"source":"meet","target":"station"},{"source":"meet","target":"worried"},{"source":"meet","target":"sign"},{"source":"meet","target":"yesterday"},{"source":"meet","target":"student"},{"source":"meet","target":"teacher"},{"source":"meet","target":"month"},{"source":"meet","target":"save"},{"source":"meet","target":"space"},{"source":"meet","target":"summer"},{"source":"month","target":"open"},{"source":"month","target":"speak"},{"source":"month","target":"sit"},{"source":"month","target":"sea"},{"source":"month","target":"move"},{"source":"month","target":"write"},{"source":"month","target":"question"},{"source":"month","target":"mother"},{"source":"month","target":"stay"},{"source":"month","target":"young"},{"source":"month","target":"mountain"},{"source":"month","target":"street"},{"source":"mother","target":"waiter"},{"source":"mother","target":"person"},{"source":"mother","target":"teacher"},{"source":"mother","target":"save"},{"source":"mother","target":"space"},{"source":"mother","target":"pocket"},{"source":"mountain","target":"team"},{"source":"mountain","target":"popular"},{"source":"mountain","target":"visit"},{"source":"mountain","target":"top"},{"source":"mountain","target":"worried"},{"source":"mountain","target":"tent"},{"source":"mountain","target":"plane"},{"source":"mountain","target":"summer"},{"source":"mountain","target":"side"},{"source":"move","target":"safe"},{"source":"move","target":"visit"},{"source":"move","target":"yesterday"},{"source":"move","target":"waiter"},{"source":"move","target":"worried"},{"source":"move","target":"seem"},{"source":"move","target":"team"},{"source":"move","target":"teacher"},{"source":"much","target":"visit"},{"source":"much","target":"person"},{"source":"much","target":"travel"},{"source":"much","target":"summer"},{"source":"much","target":"save"},{"source":"open","target":"pocket"},{"source":"open","target":"wall"},{"source":"open","target":"visit"},{"source":"open","target":"top"},{"source":"open","target":"student"},{"source":"open","target":"space"},{"source":"open","target":"plane"},{"source":"open","target":"save"},{"source":"open","target":"sign"},{"source":"part","target":"station"},{"source":"part","target":"seem"},{"source":"part","target":"travel"},{"source":"part","target":"student"},{"source":"person","target":"speak"},{"source":"person","target":"sea"},{"source":"person","target":"scene"},{"source":"person","target":"question"},{"source":"person","target":"stay"},{"source":"person","target":"young"},{"source":"plane","target":"scene"},{"source":"plane","target":"write"},{"source":"plane","target":"stay"},{"source":"pocket","target":"sit"},{"source":"pocket","target":"run"},{"source":"pocket","target":"stay"},{"source":"pocket","target":"spend"},{"source":"popular","target":"today"},{"source":"popular","target":"sit"},{"source":"popular","target":"well"},{"source":"popular","target":"young"},{"source":"question","target":"teacher"},{"source":"question","target":"sand"},{"source":"question","target":"sign"},{"source":"question","target":"top"},{"source":"question","target":"space"},{"source":"run","target":"waiter"},{"source":"run","target":"save"},{"source":"run","target":"top"},{"source":"run","target":"tent"},{"source":"run","target":"space"},{"source":"safe","target":"sea"},{"source":"safe","target":"write"},{"source":"safe","target":"turn"},{"source":"safe","target":"young"},{"source":"safe","target":"street"},{"source":"sand","target":"turn"},{"source":"sand","target":"stay"},{"source":"save","target":"sea"},{"source":"save","target":"stay"},{"source":"scene","target":"waiter"},{"source":"scene","target":"wall"},{"source":"scene","target":"teacher"},{"source":"scene","target":"sign"},{"source":"scene","target":"seem"},{"source":"scene","target":"yesterday"},{"source":"scene","target":"space"},{"source":"sea","target":"travel"},{"source":"sea","target":"side"},{"source":"seem","target":"speak"},{"source":"seem","target":"sit"},{"source":"seem","target":"turn"},{"source":"seem","target":"young"},{"source":"side","target":"well"},{"source":"sign","target":"write"},{"source":"sign","target":"turn"},{"source":"sign","target":"well"},{"source":"sit","target":"teacher"},{"source":"sit","target":"waiter"},{"source":"sit","target":"travel"},{"source":"sit","target":"summer"},{"source":"sit","target":"wall"},{"source":"sit","target":"tent"},{"source":"space","target":"speak"},{"source":"space","target":"turn"},{"source":"space","target":"spend"},{"source":"speak","target":"teacher"},{"source":"speak","target":"station"},{"source":"speak","target":"travel"},{"source":"spend","target":"summer"},{"source":"spend","target":"travel"},{"source":"spend","target":"yesterday"},{"source":"spend","target":"visit"},{"source":"spend","target":"teacher"},{"source":"station","target":"turn"},{"source":"station","target":"street"},{"source":"stay","target":"travel"},{"source":"stay","target":"teacher"},{"source":"stay","target":"visit"},{"source":"stay","target":"tent"},{"source":"stay","target":"student"},{"source":"stay","target":"top"},{"source":"stay","target":"summer"},{"source":"steal","target":"turn"},{"source":"street","target":"summer"},{"source":"street","target":"visit"},{"source":"street","target":"yesterday"},{"source":"street","target":"teacher"},{"source":"student","target":"today"},{"source":"student","target":"write"},{"source":"student","target":"young"},{"source":"summer","target":"well"},{"source":"teacher","target":"today"},{"source":"teacher","target":"write"},{"source":"teacher","target":"well"},{"source":"teacher","target":"young"},{"source":"team","target":"turn"},{"source":"team","target":"young"},{"source":"today","target":"visit"},{"source":"top","target":"write"},{"source":"travel","target":"write"},{"source":"travel","target":"young"},{"source":"waiter","target":"write"},{"source":"waiter","target":"young"},{"source":"wall","target":"write"},{"source":"wall","target":"young"},{"source":"worried","target":"young"},{"source":"yesterday","target":"young"}];
+
+const COLOR = { "1": "#378add", "2": "#E24B4A", "3": "#FF8C00" };
+const STROKE = { "1": "#185fa5", "2": "#A32D2D", "3": "#CC6600" };
+
+const bcExtent = d3.extent(NODES, d => d.betweenness);
+const rScale = d3.scaleSqrt().domain(bcExtent).range([4, 18]);
+
+const wrap = document.getElementById("canvas-wrap");
+const W = wrap.clientWidth, H = wrap.clientHeight;
+
+const svg = d3.select("#svg");
+const g = svg.append("g");
+
+const zoom = d3.zoom()
+  .scaleExtent([0.3, 4])
+  .on("zoom", e => g.attr("transform", e.transform));
+svg.call(zoom);
+
+const sim = d3.forceSimulation(NODES)
+  .force("link", d3.forceLink(EDGES).id(d => d.id).distance(300).strength(0.4))
+  .force("charge", d3.forceManyBody().strength(-100))
+  .force("center", d3.forceCenter(W / 2, H / 2))
+  .force("collide", d3.forceCollide().radius(d => rScale(d.betweenness) + 20));
+
+const linkSel = g.append("g")
+  .selectAll("line")
+  .data(EDGES)
+  .join("line")
+  .attr("class", "link");
+
+const nodeSel = g.append("g")
+  .selectAll("g")
+  .data(NODES)
+  .join("g")
+  .attr("class", "node")
+  .call(d3.drag()
+    .on("start", (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+    .on("drag",  (e, d) => { d.fx = e.x; d.fy = e.y; })
+    .on("end",   (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+nodeSel.append("circle")
+  .attr("r", d => rScale(d.betweenness))
+  .attr("fill", d => COLOR[d.list])
+  .attr("stroke", d => STROKE[d.list]);
+
+nodeSel.append("text")
+  .attr("x", d => rScale(d.betweenness) + 3)
+  .attr("y", 0)
+  .text(d => d.id);
+
+const tip = document.getElementById("tooltip");
+
+nodeSel
+  .on("mouseover", (e, d) => {
+    const neighbours = new Set(
+      EDGES.filter(l => l.source.id === d.id || l.target.id === d.id)
+           .flatMap(l => [l.source.id, l.target.id])
+    );
+    nodeSel.classed("dimmed",     nd => !neighbours.has(nd.id));
+    nodeSel.classed("highlighted", nd => nd.id === d.id);
+    linkSel.classed("highlighted", l => l.source.id === d.id || l.target.id === d.id);
+    linkSel.classed("dimmed",      l => l.source.id !== d.id && l.target.id !== d.id);
+
+    tip.innerHTML = `<div class="word">${d.id}</div>
+      <div class="stat">list <span>${d.list}</span></div>
+      <div class="stat">degree <span>${d.degree}</span></div>
+      <div class="stat">range <span>${d.range}</span></div>
+      <div class="stat">betweenness <span>${d.betweenness.toFixed(4)}</span></div>`;
+    tip.style.opacity = 1;
+  })
+  .on("mousemove", e => {
+    tip.style.left = (e.offsetX + 14) + "px";
+    tip.style.top  = (e.offsetY - 10) + "px";
+  })
+  .on("mouseout", () => {
+    nodeSel.classed("dimmed", false).classed("highlighted", false);
+    linkSel.classed("highlighted", false).classed("dimmed", false);
+    tip.style.opacity = 0;
+  });
+
+sim.on("tick", () => {
+  linkSel
+    .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+    .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+  nodeSel.attr("transform", d => `translate(${d.x},${d.y})`);
+});
+
+function filterList(lst) {
+  ["all","l2","l3"].forEach(id => document.getElementById("btn-"+id).classList.remove("active"));
+  document.getElementById("btn-" + (lst === "all" ? "all" : "l"+lst)).classList.add("active");
+
+  if (lst === "all") {
+    nodeSel.classed("dimmed", false);
+    linkSel.classed("dimmed", false);
+  } else {
+    nodeSel.classed("dimmed", d => d.list !== "1" && d.list !== lst);
+    linkSel.classed("dimmed", l =>
+      (l.source.list !== "1" && l.source.list !== lst) ||
+      (l.target.list !== "1" && l.target.list !== lst));
+  }
+}
+
+function resetZoom() {
+  svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
+}
+</script>
+</body>
+</html>
